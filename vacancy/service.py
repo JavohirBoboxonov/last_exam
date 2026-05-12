@@ -1,5 +1,5 @@
-from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, desc
+from sqlalchemy import and_, or_, desc, select, func
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List, Dict, Any
 from fastapi import HTTPException, status
 from config.models import Vacancy, Interest, CustomUser, InterestStatus
@@ -8,8 +8,8 @@ from vacancy.schema import VacancyCreate, VacancyUpdate
 class VacancyService:
     
     @staticmethod
-    def create_vacancy(
-        db: Session,
+    async def create_vacancy(
+        db: AsyncSession,
         vacancy_data: VacancyCreate,
         current_user: CustomUser
     ) -> Vacancy:
@@ -19,21 +19,25 @@ class VacancyService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only admin and HR can create vacancies"
             )
-        vacancy_data.user_id = current_user.id
         
-        new_vacancy = Vacancy(**vacancy_data.dict())
+        data = vacancy_data.dict()
+        data["user_id"] = current_user.id
+        
+        new_vacancy = Vacancy(**data)
         db.add(new_vacancy)
-        db.commit()
-        db.refresh(new_vacancy)
+        await db.commit()
+        await db.refresh(new_vacancy)
         return new_vacancy
     
     @staticmethod
-    def get_vacancy_by_id(
-        db: Session,
+    async def get_vacancy_by_id(
+        db: AsyncSession,
         vacancy_id: int,
         current_user: CustomUser
     ) -> Vacancy:
-        vacancy = db.query(Vacancy).filter(Vacancy.id == vacancy_id).first()
+        stmt = select(Vacancy).where(Vacancy.id == vacancy_id)
+        result = await db.execute(stmt)
+        vacancy = result.scalars().first()
         
         if not vacancy:
             raise HTTPException(
@@ -43,29 +47,36 @@ class VacancyService:
         return vacancy
     
     @staticmethod
-    def get_all_vacancies(
-        db: Session,
+    async def get_all_vacancies(
+        db: AsyncSession,
         current_user: CustomUser,
         skip: int = 0,
         limit: int = 100,
         filters: Dict[str, Any] = None
     ) -> Dict[str, Any]:
-        query = db.query(Vacancy).filter(Vacancy.is_active == True)
+        stmt = select(Vacancy).where(Vacancy.is_active == True)
         
         if filters:
             if filters.get("title"):
-                query = query.filter(Vacancy.title.ilike(f"%{filters['title']}%"))
+                stmt = stmt.where(Vacancy.title.ilike(f"%{filters['title']}%"))
             if filters.get("location"):
-                query = query.filter(Vacancy.location.ilike(f"%{filters['location']}%"))
+                stmt = stmt.where(Vacancy.location.ilike(f"%{filters['location']}%"))
             if filters.get("job_type"):
-                query = query.filter(Vacancy.job_type == filters["job_type"])
+                stmt = stmt.where(Vacancy.job_type == filters["job_type"])
             if filters.get("salary_min_gte"):
-                query = query.filter(Vacancy.salary_min >= filters["salary_min_gte"])
+                stmt = stmt.where(Vacancy.salary_min >= filters["salary_min_gte"])
             if filters.get("experience_required"):
-                query = query.filter(Vacancy.experience_required == filters["experience_required"])
+                stmt = stmt.where(Vacancy.experience_required == filters["experience_required"])
         
-        total = query.count()
-        vacancies = query.order_by(desc(Vacancy.created_at)).offset(skip).limit(limit).all()
+        # Total count uchun alohida so'rov
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total_result = await db.execute(count_stmt)
+        total = total_result.scalar() or 0
+        
+        # Ma'lumotlarni olish
+        stmt = stmt.order_by(desc(Vacancy.created_at)).offset(skip).limit(limit)
+        result = await db.execute(stmt)
+        vacancies = result.scalars().all()
         
         return {
             "total": total,
@@ -75,26 +86,33 @@ class VacancyService:
         }
     
     @staticmethod
-    def get_my_vacancies(
-        db: Session,
+    async def get_my_vacancies(
+        db: AsyncSession,
         current_user: CustomUser,
         skip: int = 0,
         limit: int = 100,
         is_active: Optional[bool] = None
     ) -> Dict[str, Any]:
-        if current_user.role not in ["admin", "HR"]:
+        if current_user.role not in ["admin", "hr", "HR"]: # Kichik harflarni ham tekshirish
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only admin and HR can view their vacancies"
             )
         
-        query = db.query(Vacancy).filter(Vacancy.user_id == current_user.id)
+        stmt = select(Vacancy).where(Vacancy.user_id == current_user.id)
         
         if is_active is not None:
-            query = query.filter(Vacancy.is_active == is_active)
+            stmt = stmt.where(Vacancy.is_active == is_active)
         
-        total = query.count()
-        vacancies = query.order_by(desc(Vacancy.created_at)).offset(skip).limit(limit).all()
+        # Count
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total_result = await db.execute(count_stmt)
+        total = total_result.scalar() or 0
+        
+        # Items
+        stmt = stmt.order_by(desc(Vacancy.created_at)).offset(skip).limit(limit)
+        result = await db.execute(stmt)
+        vacancies = result.scalars().all()
         
         return {
             "total": total,
@@ -104,19 +122,14 @@ class VacancyService:
         }
     
     @staticmethod
-    def update_vacancy(
-        db: Session,
+    async def update_vacancy(
+        db: AsyncSession,
         vacancy_id: int,
         vacancy_data: VacancyUpdate,
         current_user: CustomUser
     ) -> Vacancy:
-        vacancy = db.query(Vacancy).filter(Vacancy.id == vacancy_id).first()
+        vacancy = await VacancyService.get_vacancy_by_id(db, vacancy_id, current_user)
         
-        if not vacancy:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Vacancy not found"
-            )
         if current_user.role != "admin" and vacancy.user_id != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -127,24 +140,17 @@ class VacancyService:
         for key, value in update_data.items():
             setattr(vacancy, key, value)
         
-        db.commit()
-        db.refresh(vacancy)
+        await db.commit()
+        await db.refresh(vacancy)
         return vacancy
+
     @staticmethod
-    def delete_vacancy(
-        db: Session,
+    async def delete_vacancy(
+        db: AsyncSession,
         vacancy_id: int,
-        current_user: CustomUser,
-        hard_delete: bool = False
+        current_user: CustomUser
     ) -> Dict[str, str]:
-        """Vakansiyani o'chirish (faqat admin va HR o'z vakansiyalarini)"""
-        vacancy = db.query(Vacancy).filter(Vacancy.id == vacancy_id).first()
-        
-        if not vacancy:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Vacancy not found"
-            )
+        vacancy = await VacancyService.get_vacancy_by_id(db, vacancy_id, current_user)
         
         if current_user.role != "admin" and vacancy.user_id != current_user.id:
             raise HTTPException(
@@ -153,93 +159,55 @@ class VacancyService:
             )
         
         if current_user.role == "admin":
-            db.delete(vacancy)
-            db.commit()
+            await db.delete(vacancy)
+            await db.commit()
             return {"message": f"Vacancy {vacancy_id} permanently deleted"}
         else:
             vacancy.is_active = False
-            db.commit()
+            await db.commit()
             return {"message": f"Vacancy {vacancy_id} deactivated"}
     
     @staticmethod
-    def restore_vacancy(
-        db: Session,
-        vacancy_id: int,
-        current_user: CustomUser
-    ) -> Vacancy:
-        vacancy = db.query(Vacancy).filter(Vacancy.id == vacancy_id).first()
-        
-        if not vacancy:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Vacancy not found"
-            )
-        
-        # Ruxsatni tekshirish
-        if current_user.role != "admin" and vacancy.user_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You can only restore your own vacancies"
-            )
-        
-        if vacancy.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Vacancy is already active"
-            )
-        
-        vacancy.is_active = True
-        db.commit()
-        db.refresh(vacancy)
-        return vacancy
-    
-    @staticmethod
-    def get_vacancy_with_interests(
-        db: Session,
+    async def get_vacancy_with_interests(
+        db: AsyncSession,
         vacancy_id: int,
         current_user: CustomUser,
         interest_status: Optional[InterestStatus] = None
     ) -> Dict[str, Any]:
-        vacancy = db.query(Vacancy).filter(Vacancy.id == vacancy_id).first()
+        vacancy = await VacancyService.get_vacancy_by_id(db, vacancy_id, current_user)
         
-        if not vacancy:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Vacancy not found"
-            )
         if current_user.role != "admin" and vacancy.user_id != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You can only view interests for your own vacancies"
             )
     
-        query = db.query(Interest).filter(Interest.vacancy_id == vacancy_id)
-        
+        # Interestlarni olish (User bilan bog'langan holda select qilsa ham bo'ladi, lekin kodingiz uslubida qoldirdim)
+        stmt = select(Interest).where(Interest.vacancy_id == vacancy_id)
         if interest_status:
-            query = query.filter(Interest.status == interest_status)
+            stmt = stmt.where(Interest.status == interest_status)
         
-        interests = query.order_by(desc(Interest.created_at)).all()
+        result = await db.execute(stmt.order_by(desc(Interest.created_at)))
+        interests = result.scalars().all()
         
-        # User ma'lumotlarini qo'shish
         interests_with_users = []
         for interest in interests:
-            user = db.query(CustomUser).filter(CustomUser.id == interest.user_id).first()
+            user_stmt = select(CustomUser).where(CustomUser.id == interest.user_id)
+            user_res = await db.execute(user_stmt)
+            user = user_res.scalars().first()
+            
             interests_with_users.append({
                 "id": interest.id,
                 "vacancy_id": interest.vacancy_id,
                 "user_id": interest.user_id,
                 "cover_letter": interest.cover_letter,
-                "expected_salary": interest.expected_salary,
-                "message": interest.message,
                 "status": interest.status,
                 "created_at": interest.created_at,
-                "updated_at": interest.updated_at,
                 "user": {
                     "id": user.id,
                     "full_name": user.full_name,
-                    "email": user.email,
-                    "avatar": getattr(user, "avatar", None)
-                }
+                    "email": user.email
+                } if user else None
             })
         
         return {
@@ -248,66 +216,14 @@ class VacancyService:
             "interests": interests_with_users,
             "statistics": {
                 "pending": len([i for i in interests if i.status == InterestStatus.PENDING]),
-                "viewed": len([i for i in interests if i.status == InterestStatus.VIEWED]),
                 "accepted": len([i for i in interests if i.status == InterestStatus.ACCEPTED]),
                 "rejected": len([i for i in interests if i.status == InterestStatus.REJECTED])
             }
         }
-    
+
     @staticmethod
-    def update_vacancy_status(
-        db: Session,
-        vacancy_id: int,
-        is_active: bool,
-        current_user: CustomUser
-    ) -> Vacancy:
-        """Vakansiya statusini o'zgartirish (active/inactive)"""
-        vacancy = db.query(Vacancy).filter(Vacancy.id == vacancy_id).first()
-        
-        if not vacancy:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Vacancy not found"
-            )
-        if current_user.role != "admin" and vacancy.user_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You can only update your own vacancies"
-            )
-        
-        vacancy.is_active = is_active
-        db.commit()
-        db.refresh(vacancy)
-        return vacancy
-    
-    @staticmethod
-    def bulk_create_vacancies(
-        db: Session,
-        vacancies_data: List[VacancyCreate],
-        current_user: CustomUser
-    ) -> List[Vacancy]:
-        if current_user.role not in ["admin", "HR"]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only admin and HR can create vacancies"
-            )
-        
-        created_vacancies = []
-        for vacancy_data in vacancies_data:
-            vacancy_data.user_id = current_user.id
-            new_vacancy = Vacancy(**vacancy_data.dict())
-            db.add(new_vacancy)
-            created_vacancies.append(new_vacancy)
-        
-        db.commit()
-        for vacancy in created_vacancies:
-            db.refresh(vacancy)
-        
-        return created_vacancies
-    
-    @staticmethod
-    def get_vacancy_statistics(
-        db: Session,
+    async def get_vacancy_statistics(
+        db: AsyncSession,
         current_user: CustomUser
     ) -> Dict[str, Any]:
         if current_user.role not in ["admin", "hr"]:
@@ -315,58 +231,84 @@ class VacancyService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only admin and HR can view statistics"
             )
+
         if current_user.role == "admin":
-            total_vacancies = db.query(Vacancy).count()
-            active_vacancies = db.query(Vacancy).filter(Vacancy.is_active == True).count()
-            inactive_vacancies = db.query(Vacancy).filter(Vacancy.is_active == False).count()
+            # Total stats
+            res_total = await db.execute(select(func.count(Vacancy.id)))
+            res_active = await db.execute(select(func.count(Vacancy.id)).where(Vacancy.is_active == True))
+            
+            hr_users_res = await db.execute(select(CustomUser).where(CustomUser.role == "hr"))
+            hr_users = hr_users_res.scalars().all()
+            
             hr_stats = []
-            hr_users = db.query(CustomUser).filter(CustomUser.role == "hr").all()
             for hr in hr_users:
-                hr_vacancies = db.query(Vacancy).filter(Vacancy.user_id == hr.id).count()
-                hr_active = db.query(Vacancy).filter(
-                    Vacancy.user_id == hr.id,
-                    Vacancy.is_active == True
-                ).count()
+                v_count_res = await db.execute(select(func.count(Vacancy.id)).where(Vacancy.user_id == hr.id))
                 hr_stats.append({
-                    "hr_id": hr.id,
                     "hr_name": hr.full_name,
-                    "total_vacancies": hr_vacancies,
-                    "active_vacancies": hr_active
+                    "total_vacancies": v_count_res.scalar() or 0
                 })
             
             return {
-                "total_vacancies": total_vacancies,
-                "active_vacancies": active_vacancies,
-                "inactive_vacancies": inactive_vacancies,
+                "total_vacancies": res_total.scalar() or 0,
+                "active_vacancies": res_active.scalar() or 0,
                 "hr_statistics": hr_stats
             }
         else:
-            my_vacancies = db.query(Vacancy).filter(Vacancy.user_id == current_user.id)
+            # HR o'z statistikasi
+            stmt = select(Vacancy).where(Vacancy.user_id == current_user.id)
+            res = await db.execute(stmt)
+            vacancies = res.scalars().all()
             
-            total = my_vacancies.count()
-            active = my_vacancies.filter(Vacancy.is_active == True).count()
-            inactive = my_vacancies.filter(Vacancy.is_active == False).count()
             total_interests = 0
-            pending_interests = 0
-            accepted_interests = 0
-            rejected_interests = 0
-            
-            vacancies = my_vacancies.all()
-            for vacancy in vacancies:
-                interests = db.query(Interest).filter(Interest.vacancy_id == vacancy.id).all()
-                total_interests += len(interests)
-                pending_interests += len([i for i in interests if i.status == InterestStatus.PENDING])
-                accepted_interests += len([i for i in interests if i.status == InterestStatus.ACCEPTED])
-                rejected_interests += len([i for i in interests if i.status == InterestStatus.REJECTED])
-            
+            for v in vacancies:
+                int_res = await db.execute(select(func.count(Interest.id)).where(Interest.vacancy_id == v.id))
+                total_interests += (int_res.scalar() or 0)
+                
             return {
-                "total_vacancies": total,
-                "active_vacancies": active,
-                "inactive_vacancies": inactive,
-                "interests_statistics": {
-                    "total": total_interests,
-                    "pending": pending_interests,
-                    "accepted": accepted_interests,
-                    "rejected": rejected_interests
-                }
+                "my_total_vacancies": len(vacancies),
+                "total_received_interests": total_interests
             }
+    @staticmethod
+    async def create_vacancy(
+        db: AsyncSession,
+        vacancy_data: VacancyCreate,
+        current_user: CustomUser
+    ) -> Vacancy:
+        data = vacancy_data.dict()
+        data["user_id"] = current_user.id 
+        new_vacancy = Vacancy(**data)
+        
+        db.add(new_vacancy)
+        await db.commit()
+        await db.refresh(new_vacancy)
+        
+        return new_vacancy
+    
+    # vacancy/service.py ichida
+
+    @staticmethod
+    async def get_my_vacancies(
+        db: AsyncSession,
+        current_user: CustomUser,
+        skip: int = 0,
+        limit: int = 100,
+        is_active: Optional[bool] = None  # API dan kelayotgan argument
+    ) -> Dict[str, Any]:
+        stmt = select(Vacancy).where(Vacancy.user_id == current_user.id)
+        if is_active is not None:
+            stmt = stmt.where(Vacancy.is_active == is_active)
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total_res = await db.execute(count_stmt)
+        total = total_res.scalar() or 0
+        
+        # 4. Ma'lumotlarni o'zini olish
+        stmt = stmt.order_by(desc(Vacancy.created_at)).offset(skip).limit(limit)
+        result = await db.execute(stmt)
+        vacancies = result.scalars().all()
+        
+        return {
+            "total": total,
+            "items": vacancies,
+            "skip": skip,
+            "limit": limit
+        }

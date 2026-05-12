@@ -2,8 +2,8 @@ FROM python:3.12-alpine
 
 WORKDIR /java
 
-COPY ./requirements.txt /code/requirements.txt
-RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
+COPY ./requirements.txt /java/requirements.txt
+RUN pip install --no-cache-dir --upgrade -r /java/requirements.txt
 ENV PYTHONPATH=/code
 
 COPY . .

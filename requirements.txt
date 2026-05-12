@@ -11,3 +11,4 @@ sqlalchemy
 argon2-cffi
 asyncpg
 alembic
+sqladmin

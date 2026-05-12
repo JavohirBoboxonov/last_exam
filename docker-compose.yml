@@ -3,16 +3,20 @@ services:
     build: .
     container_name: fastapi_app
     ports:
-      - "8000:8000"
+      - "8000:80"
     volumes:
-      - ./app:/code/app
+      - .:/java
+    command: uvicorn main:app --host 0.0.0.0 --port 80 --reload
     environment:
-      - DATABASE_URL=postgresql://user:password@db:5432/fastapi_db
-      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql+asyncpg://related:java7834@db:5432/fastapi_db
+      - REDIS_URL=redis://redis_cache:6379/0
+      - PYTHONPATH=/java
+      - WATCHFILES_FORCE_POLLING=true 
     depends_on:
       - db
       - redis
     restart: always
+
   db:
     image: postgres:15-alpine
     container_name: fastapi_db
@@ -24,10 +28,14 @@ services:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5433:5432"
+    restart: always
+
   redis:
     image: redis:7-alpine
     container_name: redis_cache
     ports:
       - "6379:6379"
+    restart: always
+
 volumes:
   postgres_data:

@@ -1,11 +1,9 @@
-# schemas.py
-
+from uuid import UUID # Tepada import qiling
+from datetime import datetime
 from pydantic import BaseModel, Field, validator
 from typing import Optional, List
 from datetime import datetime
 from enum import Enum
-
-# ============ ENUMS ============
 class JobTypeEnum(str, Enum):
     FULL_TIME = "full_time"
     PART_TIME = "part_time"
@@ -26,8 +24,6 @@ class InterestStatusEnum(str, Enum):
     ACCEPTED = "accepted"
     REJECTED = "rejected"
     CANCELED = "canceled"
-
-# ============ VACANCY SCHEMAS ============
 class VacancyBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     description: str = Field(..., min_length=1)
@@ -54,7 +50,7 @@ class VacancyBase(BaseModel):
         return v
 
 class VacancyCreate(VacancyBase):
-    user_id: int = Field(..., gt=0)
+    pass
 
 class VacancyUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=255)
@@ -77,7 +73,7 @@ class VacancyUpdate(BaseModel):
 
 class VacancyResponse(VacancyBase):
     id: int
-    user_id: int
+    user_id: UUID
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -91,8 +87,6 @@ class VacancyListResponse(BaseModel):
     
     class Config:
         from_attributes = True
-
-# ============ INTEREST SCHEMAS ============
 class InterestBase(BaseModel):
     vacancy_id: int = Field(..., gt=0)
     cover_letter: Optional[str] = None
@@ -118,7 +112,6 @@ class InterestResponse(InterestBase):
     class Config:
         from_attributes = True
 
-# ============ INTEREST QO'SHIMCHA SCHEMAS ============
 class UserBriefInfo(BaseModel):
     id: int
     full_name: Optional[str] = None
@@ -152,12 +145,10 @@ class UserInterestsResponse(BaseModel):
     total_interests: int
     interests: List[InterestWithVacancyResponse]
 
-# ============ VACANCY VA INTEREST BIRGALIKDA ============
 class VacancyWithInterestsResponse(VacancyResponse):
     total_interests: int = 0
     interests: List[InterestResponse] = []
 
-# ============ FILTER PARAMETERS ============
 class VacancyFilterParams(BaseModel):
     user_id: Optional[int] = Field(None, gt=0)
     title: Optional[str] = None

@@ -109,10 +109,10 @@ class Resume(Base):
     cover_letter = Column(Text, nullable=True)
     file_path = Column(String(500), nullable=True)
     
-    is_active = Column(Boolean, default=True)
-    is_verified = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_active = Column(Boolean, server_default='true',default=True)
+    is_verified = Column(Boolean, server_default='false',default=False)
+    created_at = Column(DateTime, server_default=func.now(),default=datetime.utcnow)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=datetime.utcnow)
     user = relationship('CustomUser', back_populates='resumes')
     applications = relationship('VacancyApplication', back_populates='resume', cascade='all, delete-orphan')
     

@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field, validator, EmailStr
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
+from uuid import UUID
 
 class JobTypeEnum(str, Enum):
     FULL_TIME = "full_time"
@@ -29,7 +30,7 @@ class ApplicationStatusEnum(str, Enum):
     REVIEWED = "reviewed"
     SHORTLISTED = "shortlisted"
     REJECTED = "rejected"
-    ACCEPTED = "accepted"
+    ACCEPTED = "ACCEPTED"
     WITHDRAWN = "withdrawn"
 class UserRoleEnum(str, Enum):
     ADMIN = "admin"
@@ -159,7 +160,7 @@ class ResumeUpdate(BaseModel):
 
 class ResumeResponse(ResumeBase):
     id: int
-    user_id: int
+    user_id: UUID
     is_active: bool
     file_path: Optional[str] = None
     created_at: datetime

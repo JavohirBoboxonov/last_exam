@@ -1,42 +1,51 @@
-# auth.py (autentifikatsiya uchun)
-
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from typing import List
 import jwt
 
+# O'zingizning importlaringizni tekshiring
+from auth import utils 
 from config.database import get_db
 from config.models import CustomUser
 
 security = HTTPBearer()
 
-def get_current_user(
+# 1. JUDA MUHIM: 'async def' deb yozilganiga ishonch hosil qiling
+async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ) -> CustomUser:
     token = credentials.credentials
     try:
-        payload = jwt.decode(token, "SECRET_KEY", algorithms=["HS256"])
-        user_id = payload.get("user_id")
-        if user_id is None:
-            raise HTTPException(status_code=401, detail="Invalid token")
+        payload = jwt.decode(token, utils.SECRET_KEY, algorithms=[utils.ALGORITHM])
+        user_id = payload.get("sub") 
         
-        user = db.query(CustomUser).filter(CustomUser.id == user_id).first()
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Token yaroqsiz")
+
+        # 2. ESKI 'db.query' ni butunlay o'chiring va buni yozing:
+        # Shunchaki user_id ni o'zini ishlating (int() siz)
+        stmt = select(CustomUser).where(CustomUser.id == user_id)
+        result = await db.execute(stmt)  # 3. 'await' so'zi shart!
+        user = result.scalars().first()
+        
         if user is None:
-            raise HTTPException(status_code=401, detail="User not found")
+            raise HTTPException(status_code=401, detail="Foydalanuvchi topilmadi")
         
         return user
+        
     except jwt.PyJWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(status_code=401, detail="Token xatosi")
 
+# 4. Buni ham async qiling
 def require_roles(allowed_roles: List[str]):
-    """Faqat allowed_roles dagilar kirishi mumkin"""
-    def role_checker(current_user: CustomUser = Depends(get_current_user)):
+    async def role_checker(current_user: CustomUser = Depends(get_current_user)):
         if current_user.role not in allowed_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Role {current_user.role} not allowed. Required: {allowed_roles}"
+                detail="Ruxsat yo'q"
             )
         return current_user
     return role_checker
