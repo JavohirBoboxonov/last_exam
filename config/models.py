@@ -18,8 +18,6 @@ import uuid
 import enum
 
 roles = ["admin", "HR", "Candidate"]
-
-# ============ ENUMS ============
 class InterestStatus(enum.Enum):
     PENDING = "pending"
     VIEWED = "viewed"
@@ -92,8 +90,6 @@ class Resume(Base):
     full_name = Column(String(255), nullable=False)
     email = Column(String(255), nullable=False)
     phone = Column(String(50), nullable=True)
-    
-    # Professional ma'lumotlar
     position = Column(String(255), nullable=False)
     experience_years = Column(Float, default=0)
     skills = Column(Text, nullable=True)
@@ -125,8 +121,6 @@ class VacancyApplication(Base):
     vacancy_id = Column(Integer, ForeignKey('vacancies.id', ondelete='CASCADE'), nullable=False)
     user_id = Column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     resume_id = Column(Integer, ForeignKey('resumes.id', ondelete='CASCADE'), nullable=False)
-    
-    # Application ma'lumotlari
     status = Column(SQLEnum(ApplicationStatus), default=ApplicationStatus.PENDING)
     message = Column(Text, nullable=True)
     cover_letter = Column(Text, nullable=True)

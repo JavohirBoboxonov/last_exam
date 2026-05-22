@@ -81,18 +81,3 @@ async def get_vacancy_interests(
     db: AsyncSession = Depends(get_db)
 ):
     return await VacancyService.get_vacancy_with_interests(db, vacancy_id, current_user, interest_status) # await
-@router.get("/statistics/dashboard")
-async def get_vacancy_statistics(
-    current_user: CustomUser = Depends(require_roles(["admin", "HR"])),
-    db: AsyncSession = Depends(get_db)
-):
-    return await VacancyService.get_vacancy_statistics(db, current_user)
-
-# 11. bulk_create
-@router.post("/bulk-create", response_model=List[VacancyResponse])
-async def bulk_create_vacancies( # async
-    vacancies_data: List[VacancyCreate],
-    current_user: CustomUser = Depends(require_roles(["admin", "HR"])),
-    db: AsyncSession = Depends(get_db)
-):
-    return await VacancyService.bulk_create_vacancies(db, vacancies_data, current_user)

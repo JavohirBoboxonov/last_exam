@@ -24,9 +24,6 @@ async def get_current_user(
         
         if user_id is None:
             raise HTTPException(status_code=401, detail="Token yaroqsiz")
-
-        # 2. ESKI 'db.query' ni butunlay o'chiring va buni yozing:
-        # Shunchaki user_id ni o'zini ishlating (int() siz)
         stmt = select(CustomUser).where(CustomUser.id == user_id)
         result = await db.execute(stmt)  # 3. 'await' so'zi shart!
         user = result.scalars().first()
@@ -39,7 +36,6 @@ async def get_current_user(
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Token xatosi")
 
-# 4. Buni ham async qiling
 def require_roles(allowed_roles: List[str]):
     async def role_checker(current_user: CustomUser = Depends(get_current_user)):
         if current_user.role not in allowed_roles:

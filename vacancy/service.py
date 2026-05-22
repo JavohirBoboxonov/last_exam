@@ -103,13 +103,9 @@ class VacancyService:
         
         if is_active is not None:
             stmt = stmt.where(Vacancy.is_active == is_active)
-        
-        # Count
         count_stmt = select(func.count()).select_from(stmt.subquery())
         total_result = await db.execute(count_stmt)
         total = total_result.scalar() or 0
-        
-        # Items
         stmt = stmt.order_by(desc(Vacancy.created_at)).offset(skip).limit(limit)
         result = await db.execute(stmt)
         vacancies = result.scalars().all()

@@ -13,9 +13,6 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(db: db_dependency, user_data: CreateUserSchema):
-    """Ro'yxatdan o'tish - SHA256+Bcrypt bilan"""
-    
-    # Username yoki email mavjudligini tekshirish
     existing_user = await db.execute(
         select(CustomUser).where(
             (CustomUser.username == user_data.username) | 
@@ -27,14 +24,12 @@ async def register(db: db_dependency, user_data: CreateUserSchema):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username yoki email allaqachon mavjud"
         )
-    
-    # Yangi user yaratish (SHA256 + Bcrypt)
     new_user = CustomUser(
         username=user_data.username,
         email=user_data.email,
         phone_number=user_data.phone_number,
-        password=hash_password(user_data.password),  # ✅ SHA256 + Bcrypt
-        role="user"
+        password=hash_password(user_data.password),
+        role="Candidate"
     )
     
     db.add(new_user)
@@ -54,15 +49,11 @@ async def login(db: db_dependency, login_data: LoginRequest):
     query = select(CustomUser).where(CustomUser.username == login_data.username)
     result = await db.execute(query)
     user = result.scalar_one_or_none()
-
-    # Parolni tekshirish (SHA256 + Bcrypt)
     if not user or not verify_password(login_data.password, user.password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Username yoki parol xato"
         )
-
-    # Tokenlar yaratish
     token_data = {"sub": str(user.id)}
     access_token = create_access_token(data=token_data)
     refresh_token = create_refresh_token(data=token_data)

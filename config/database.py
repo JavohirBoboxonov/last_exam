@@ -3,16 +3,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from sqlalchemy.orm import declarative_base
 from typing import Annotated
 from fastapi import Depends
-
-# --- SHU QISMNI NUSXALAB OLING ---
-# Agar Docker ichida bo'lsa 'db'ga, bo'lmasa '127.0.0.1'ga (localhost) ulanadi
 DEFAULT_URL = "postgresql+asyncpg://related:java7834@127.0.0.1:5433/fastapi_db"
 DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_URL)
-
-# Agar kodingiz Docker ichida ishlayotgan bo'lsa, avtomatik 'db'ga o'giradi
 if os.path.exists("/.dockerenv"):
     DATABASE_URL = DATABASE_URL.replace("127.0.0.1:5433", "db:5432")
-# --------------------------------
 
 engine = create_async_engine(DATABASE_URL, echo=True)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)

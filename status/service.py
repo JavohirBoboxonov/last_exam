@@ -4,11 +4,10 @@ from fastapi import HTTPException, status
 from typing import Optional, Dict, Any
 from datetime import datetime
 
-# Modellaringiz va sxemalaringizni import qilish (yo'llarni tekshiring)
 from config.models import Vacancy, VacancyApplication, Resume, CustomUser, ApplicationStatus
 from status.schema import VacancyApplyRequest, VacancyApplicationUpdate, ResumeCreate
 
-class ApplicationService:
+class ApplicationSecondService:
     
     @staticmethod
     async def apply_to_vacancy(
@@ -17,23 +16,16 @@ class ApplicationService:
         apply_data: VacancyApplyRequest, 
         current_user: CustomUser
     ) -> Dict[str, Any]:
-        """Vakansiyaga ariza berish (To'liq tekshiruvlar bilan)"""
-        
-        # 1. Vakansiya mavjudligi va faolligini tekshirish
         v_stmt = select(Vacancy).where(Vacancy.id == vacancy_id, Vacancy.is_active == True)
         v_res = await db.execute(v_stmt)
         vacancy = v_res.scalar_one_or_none()
         if not vacancy:
             raise HTTPException(status_code=404, detail="Vakansiya topilmadi yoki faol emas")
-
-        # 2. Rezyume foydalanuvchiga tegishliligini tekshirish
         r_stmt = select(Resume).where(Resume.id == apply_data.resume_id, Resume.user_id == current_user.id)
         r_res = await db.execute(r_stmt)
         resume = r_res.scalar_one_or_none()
         if not resume:
             raise HTTPException(status_code=404, detail="Rezyume topilmadi")
-
-        # 3. Oldin ariza topshirilganini tekshirish
         existing_stmt = select(VacancyApplication).where(
             VacancyApplication.vacancy_id == vacancy_id,
             VacancyApplication.user_id == current_user.id,
@@ -74,17 +66,13 @@ class ApplicationService:
         skip: int = 0,
         limit: int = 100
     ) -> Dict[str, Any]:
-        """Foydalanuvchining o'z arizalarini olish"""
         stmt = select(VacancyApplication).where(VacancyApplication.user_id == current_user.id)
         if status:
             stmt = stmt.where(VacancyApplication.status == status)
         
-        # Jami sonini olish
         count_stmt = select(func.count()).select_from(stmt.subquery())
         total_res = await db.execute(count_stmt)
         total = total_res.scalar()
-
-        # Sahifalangan ma'lumotlarni olish
         stmt = stmt.order_by(desc(VacancyApplication.created_at)).offset(skip).limit(limit)
         apps_res = await db.execute(stmt)
         applications = apps_res.scalars().all()

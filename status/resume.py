@@ -70,15 +70,12 @@ class ResumeService:
 class ApplicationService:
     @staticmethod
     async def apply_to_vacancy(db: AsyncSession, vacancy_id: int, apply_data: VacancyApplyRequest, current_user: CustomUser):
-        """Asinxron Vakansiyaga ariza berish"""
-        # 1. Vakansiyani tekshirish
         v_stmt = select(Vacancy).where(Vacancy.id == vacancy_id, Vacancy.is_active == True)
         v_res = await db.execute(v_stmt)
         vacancy = v_res.scalar_one_or_none()
         if not vacancy:
             raise HTTPException(status_code=404, detail="Vakansiya faol emas")
 
-        # 2. Oldin ariza topshirganini tekshirish
         stmt = select(VacancyApplication).where(
             VacancyApplication.vacancy_id == vacancy_id,
             VacancyApplication.user_id == current_user.id,
@@ -88,7 +85,6 @@ class ApplicationService:
         if res.scalar_one_or_none():
             raise HTTPException(status_code=400, detail="Siz ariza topshirib bo'lgansiz")
 
-        # 3. Saqlash
         new_app = VacancyApplication(
             vacancy_id=vacancy_id,
             user_id=current_user.id,
@@ -99,7 +95,7 @@ class ApplicationService:
         db.add(new_app)
         await db.commit() #
         await db.refresh(new_app)
-        return {"application_id": new_app.id, "status": new_app.status.value}
+        return {"application_id": new_app.id, "status": new_app.status.value, "message": new_app.message, "applied_at": new_app.created_at}
 
     @staticmethod
     async def check_already_applied(db: AsyncSession, vacancy_id: int, current_user: CustomUser):
@@ -118,22 +114,17 @@ class ApplicationService:
         update_data: VacancyApplicationUpdate,
         current_user: CustomUser
     ) -> Dict[str, Any]:
-        """Ariza statusini yangilash (Xavfsizlik tekshiruvlari bilan)"""
-        
-        # 1. Arizani qidirish
         stmt = select(VacancyApplication).where(VacancyApplication.id == application_id)
         result = await db.execute(stmt)
         application = result.scalar_one_or_none()
         
         if not application:
             raise HTTPException(status_code=404, detail="Ariza topilmadi")
-        
-        # 2. Vakansiya egasi yoki Admin ekanligini tekshirish
         v_stmt = select(Vacancy).where(Vacancy.id == application.vacancy_id)
         v_result = await db.execute(v_stmt)
         vacancy = v_result.scalar_one_or_none()
         
-        if current_user.role not in ["admin"] and (not vacancy or vacancy.user_id != current_user.id):
+        if current_user.role not in ["admin", "HR"] and (not vacancy or vacancy.user_id != current_user.id):
             raise HTTPException(
                 status_code=403, 
                 detail="Sizda ushbu ariza statusini o'zgartirish huquqi yo'q"

@@ -124,8 +124,6 @@ class VacancyListResponse(BaseModel):
     
     class Config:
         from_attributes = True
-
-# ============ RESUME SCHEMAS ============
 class ResumeBase(BaseModel):
     full_name: str = Field(..., min_length=1, max_length=255, description="To'liq ism")
     email: EmailStr = Field(..., description="Email manzil")
@@ -217,7 +215,7 @@ class VacancyApplicationUpdate(BaseModel):
 
 class VacancyApplicationResponse(VacancyApplicationBase):
     id: int
-    user_id: int
+    user_id: UUID
     status: ApplicationStatusEnum
     reviewed_by: Optional[int] = None
     reviewed_at: Optional[datetime] = None
@@ -277,8 +275,6 @@ class UserApplicationsResponse(BaseModel):
 
 class ResumeWithApplicationsResponse(ResumeResponse):
     applications: List[VacancyApplicationResponse] = []
-
-# ============ FILTER PARAMETERS ============
 class VacancyFilterParams(BaseModel):
     user_id: Optional[int] = Field(None, gt=0)
     title: Optional[str] = None
